@@ -2,6 +2,8 @@
 #include <string.h>
 #include <stdlib.h>
 
+#include "matrix.h"
+
 #define MAX_LINES 1024
 #define MAX_LINE_SIZE 1024
 #define MAX(x, y) x > y ? x : y
@@ -70,24 +72,6 @@ void print_buffer(Buffer *buffer) {
     for (int i = 0; i < buffer->size; ++i) {
         printf("%3d: %s\n", i + 1, buffer->lines[i]);
     }
-}
-
-int **allocate_matrix(int rows, int columns) {
-    int **matrix = malloc(rows * sizeof(int *));
-
-    for (int i = 0; i < rows; ++i) {
-        matrix[i] = malloc(columns * sizeof(int));
-    }
-
-    return matrix;
-}
-
-void free_matrix(int **matrix, int rows) {
-    for (int i = 0; i < rows; ++i) {
-        free(matrix[i]);
-    }
-
-    free(matrix);
 }
 
 void lcs_matrix(int **matrix, Buffer *buffer1, Buffer *buffer2) {
@@ -206,11 +190,11 @@ int main(int argc, char *argv[]) {
     Buffer buffer1 = read_file(argv[1]);
     Buffer buffer2 = read_file(argv[2]);
 
-    int **matrix = allocate_matrix(buffer1.size + 1, buffer2.size + 1);
-    lcs_matrix(matrix, &buffer1, &buffer2);
+    Matrix matrix = allocate_matrix(buffer1.size + 1, buffer2.size + 1);
+    lcs_matrix(matrix.m, &buffer1, &buffer2);
 
-    Diff diff = get_diff(matrix, &buffer1, &buffer2);
-    free_matrix(matrix, buffer1.size + 1);
+    Diff diff = get_diff(matrix.m, &buffer1, &buffer2);
+    free_matrix(&matrix);
 
     for (int i = 0; i < diff.size; i++) {
         Diff_Element diff_element = diff.elements[i];
