@@ -72,14 +72,22 @@ void print_buffer(Buffer *buffer) {
     }
 }
 
-int **allocate_matrix(int rows_n, int columns_n) {
-    int **matrix = malloc(rows_n * sizeof(int *));
+int **allocate_matrix(int rows, int columns) {
+    int **matrix = malloc(rows * sizeof(int *));
 
-    for (int i = 0; i < rows_n; ++i) {
-        matrix[i] = malloc(columns_n * sizeof(int));
+    for (int i = 0; i < rows; ++i) {
+        matrix[i] = malloc(columns * sizeof(int));
     }
 
     return matrix;
+}
+
+void free_matrix(int **matrix, int rows) {
+    for (int i = 0; i < rows; ++i) {
+        free(matrix[i]);
+    }
+
+    free(matrix);
 }
 
 void lcs_matrix(int **matrix, Buffer *buffer1, Buffer *buffer2) {
@@ -178,7 +186,15 @@ Buffer read_file(char *name) {
     Buffer buffer;
     buffer.size = readlines(fp, buffer.lines);
 
+    fclose(fp);
+
     return buffer;
+}
+
+void free_buffer(Buffer *buffer) {
+    for (int i = 0; i < buffer->size; ++i) {
+        free(buffer->lines[i]);
+    }
 }
 
 int main(int argc, char *argv[]) {
@@ -194,6 +210,7 @@ int main(int argc, char *argv[]) {
     lcs_matrix(matrix, &buffer1, &buffer2);
 
     Diff diff = get_diff(matrix, &buffer1, &buffer2);
+    free_matrix(matrix, buffer1.size + 1);
 
     for (int i = 0; i < diff.size; i++) {
         Diff_Element diff_element = diff.elements[i];
@@ -213,6 +230,9 @@ int main(int argc, char *argv[]) {
             break;
         }
     }
+
+    free_buffer(&buffer1);
+    free_buffer(&buffer2);
 
     return 0;
 }
