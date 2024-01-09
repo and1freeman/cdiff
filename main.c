@@ -9,7 +9,23 @@
 typedef struct {
     char *lines[MAX_LINES];
     int size; // in lines
-} File;
+} Buffer;
+
+typedef enum {
+    DIFF_ADDITION,
+    DIFF_REMOVAL,
+    DIFF_UNCHANGED,
+} Diff_Type;
+
+typedef struct {
+    Diff_Type type;
+    char *line;
+} Diff_Element;
+
+typedef struct {
+    Diff_Element elements[MAX_LINE_SIZE * 2];
+    int size;
+} Diff;
 
 size_t readline(FILE *fp, char *s, int max) {
     if (fgets(s, max, fp) != NULL) {
@@ -50,9 +66,9 @@ void print_matrix(int **matrix, int rows, int columns) {
     }
 }
 
-void print_file(File *file) {
-    for (int i = 0; i < file->size; ++i) {
-        printf("%3d: %s\n", i + 1, file->lines[i]);
+void print_buffer(Buffer *buffer) {
+    for (int i = 0; i < buffer->size; ++i) {
+        printf("%3d: %s\n", i + 1, buffer->lines[i]);
     }
 }
 
@@ -66,12 +82,12 @@ int **allocate_matrix(int rows_n, int columns_n) {
     return matrix;
 }
 
-void lcs_matrix(int **matrix, File *file1, File *file2) {
-    for (int i = 0; i < file1->size + 1; ++i) {
-        for (int j = 0; j < file2->size + 1; ++j) {
+void lcs_matrix(int **matrix, Buffer *buffer1, Buffer *buffer2) {
+    for (int i = 0; i < buffer1->size + 1; ++i) {
+        for (int j = 0; j < buffer2->size + 1; ++j) {
             if (i == 0 || j == 0) {
                 matrix[i][j] = 0;
-            } else if (!strcmp(file1->lines[i - 1], file2->lines[j - 1])) {
+            } else if (!strcmp(buffer1->lines[i - 1], buffer2->lines[j - 1])) {
                 matrix[i][j] = 1 + matrix[i - 1][j - 1];
             } else {
                 matrix[i][j] = MAX(matrix[i - 1][j], matrix[i][j - 1]);
@@ -80,16 +96,16 @@ void lcs_matrix(int **matrix, File *file1, File *file2) {
     }
 }
 
-File lcs(int **matrix, File *file1, File *file2) {
-    File result;
-    int i = file1->size, j = file2->size;
+Buffer lcs(int **matrix, Buffer *buffer1, Buffer *buffer2) {
+    Buffer result;
+    int i = buffer1->size, j = buffer2->size;
     char *p;
 
     int size = 0;
     while (i != 0 && j != 0) {
-        if (!strcmp(file1->lines[i - 1], file2->lines[j - 1])) {
-            p = malloc(strlen(file1->lines[i - 1]));
-            strcpy(p, file1->lines[i - 1]);
+        if (!strcmp(buffer1->lines[i - 1], buffer2->lines[j - 1])) {
+            p = malloc(strlen(buffer1->lines[i - 1]));
+            strcpy(p, buffer1->lines[i - 1]);
             result.lines[size++] = p;
 
             i -= 1;
@@ -113,7 +129,45 @@ File lcs(int **matrix, File *file1, File *file2) {
     return result;
 }
 
-File read_file(char *name) {
+Diff get_diff(int **matrix, Buffer *buffer1, Buffer *buffer2) {
+    /* TODO: dynamic array */
+    Diff diff;
+
+    int i = buffer1->size, j = buffer2->size;
+    int size = 0;
+    while (i != 0 || j != 0) {
+        if (i == 0) {
+            diff.elements[size++] = (Diff_Element) {.type = DIFF_ADDITION, .line = buffer2->lines[j - 1]};
+            j -= 1;
+        } else if (j == 0) {
+            diff.elements[size++] = (Diff_Element) {.type = DIFF_REMOVAL, .line = buffer1->lines[i - 1]};
+            i -= 1;
+        } else if (!strcmp(buffer1->lines[i - 1], buffer2->lines[j - 1])) {
+            diff.elements[size++] = (Diff_Element) {.type = DIFF_UNCHANGED, .line = buffer1->lines[i - 1]};
+            i -= 1;
+            j -= 1;
+        } else if (matrix[i - 1][j] <= matrix[i][j - 1]) {
+            diff.elements[size++] = (Diff_Element) {.type = DIFF_ADDITION, .line = buffer2->lines[j - 1]};
+            j -= 1;
+        } else {
+            diff.elements[size++] = (Diff_Element) {.type = DIFF_REMOVAL, .line = buffer1->lines[i - 1]};
+            i -= 1;
+        }
+    }
+
+    Diff_Element temp;
+    for (int i = 0, k = size - 1; i < k; i++, k--) {
+        temp = diff.elements[i];
+        diff.elements[i] = diff.elements[k];
+        diff.elements[k] = temp;
+    }
+
+    diff.size = size;
+
+    return diff;
+}
+
+Buffer read_file(char *name) {
     FILE *fp = fopen(name, "r");
 
     if (fp == NULL) {
@@ -121,10 +175,10 @@ File read_file(char *name) {
         exit(1);
     }
 
-    File file;
-    file.size = readlines(fp, file.lines);
+    Buffer buffer;
+    buffer.size = readlines(fp, buffer.lines);
 
-    return file;
+    return buffer;
 }
 
 int main(int argc, char *argv[]) {
@@ -133,14 +187,32 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    File file1 = read_file(argv[1]);
-    File file2 = read_file(argv[2]);
+    Buffer buffer1 = read_file(argv[1]);
+    Buffer buffer2 = read_file(argv[2]);
 
-    int **matrix = allocate_matrix(file1.size + 1, file2.size + 1);
-    lcs_matrix(matrix, &file1, &file2);
+    int **matrix = allocate_matrix(buffer1.size + 1, buffer2.size + 1);
+    lcs_matrix(matrix, &buffer1, &buffer2);
 
-    File result = lcs(matrix, &file1, &file2);
-    print_file(&result);
+    Diff diff = get_diff(matrix, &buffer1, &buffer2);
+
+    for (int i = 0; i < diff.size; i++) {
+        Diff_Element diff_element = diff.elements[i];
+
+        switch (diff_element.type) {
+        case DIFF_ADDITION:
+            printf("\033[0;32m");
+            printf("+%s\n", diff_element.line);
+            printf("\033[0m");
+            break;
+        case DIFF_REMOVAL:
+            printf("\033[0;31m");
+            printf("-%s\n", diff_element.line);
+            printf("\033[0m");
+            break;
+        default:
+            break;
+        }
+    }
 
     return 0;
 }
