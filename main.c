@@ -11,7 +11,6 @@ typedef struct {
     int size; // in lines
 } File;
 
-
 size_t readline(FILE *fp, char *s, int max) {
     if (fgets(s, max, fp) != NULL) {
         return strlen(s);
@@ -49,7 +48,12 @@ void print_matrix(int **matrix, int rows, int columns) {
 
         printf("\n");
     }
+}
 
+void print_file(File *file) {
+    for (int i = 0; i < file->size; ++i) {
+        printf("%3d: %s\n", i + 1, file->lines[i]);
+    }
 }
 
 int **allocate_matrix(int rows_n, int columns_n) {
@@ -62,11 +66,9 @@ int **allocate_matrix(int rows_n, int columns_n) {
     return matrix;
 }
 
-void lcs(int **matrix, File *file1, File *file2) {
+void lcs_matrix(int **matrix, File *file1, File *file2) {
     for (int i = 0; i < file1->size + 1; ++i) {
         for (int j = 0; j < file2->size + 1; ++j) {
-            printf("first: %s\n", file1->lines[i]);
-
             if (i == 0 || j == 0) {
                 matrix[i][j] = 0;
             } else if (!strcmp(file1->lines[i - 1], file2->lines[j - 1])) {
@@ -78,7 +80,40 @@ void lcs(int **matrix, File *file1, File *file2) {
     }
 }
 
-File open_file(char *name) {
+File lcs(int **matrix, File *file1, File *file2) {
+    File result;
+    int i = file1->size, j = file2->size;
+    char *p;
+
+    int size = 0;
+    while (i != 0 && j != 0) {
+        if (!strcmp(file1->lines[i - 1], file2->lines[j - 1])) {
+            p = malloc(strlen(file1->lines[i - 1]));
+            strcpy(p, file1->lines[i - 1]);
+            result.lines[size++] = p;
+
+            i -= 1;
+            j -= 1;
+        } else if (matrix[i - 1][j] <= matrix[i][j - 1]) {
+            j -= 1;
+        } else {
+            i -= 1;
+        }
+    }
+
+    result.size = size;
+
+    char *temp;
+    for (int i = 0, k = size - 1; i < k; i++, k--) {
+        temp = result.lines[i];
+        result.lines[i] = result.lines[k];
+        result.lines[k] = temp;
+    }
+
+    return result;
+}
+
+File read_file(char *name) {
     FILE *fp = fopen(name, "r");
 
     if (fp == NULL) {
@@ -98,15 +133,14 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    File file1 = open_file(argv[1]);
-    File file2 = open_file(argv[2]);
+    File file1 = read_file(argv[1]);
+    File file2 = read_file(argv[2]);
 
     int **matrix = allocate_matrix(file1.size + 1, file2.size + 1);
+    lcs_matrix(matrix, &file1, &file2);
 
-    lcs(matrix, &file1, &file2);
-
-    printf("==========\n");
-    print_matrix(matrix, file1.size + 1, file2.size + 1);
+    File result = lcs(matrix, &file1, &file2);
+    print_file(&result);
 
     return 0;
 }
