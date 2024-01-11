@@ -3,14 +3,16 @@
 #include <stdlib.h>
 
 #include "matrix.h"
+#include "da.h"
 
 #define MAX_LINES 1024
 #define MAX_LINE_SIZE 1024
 #define MAX(x, y) x > y ? x : y
 
 typedef struct {
-    char *lines[MAX_LINES];
-    int size; // in lines
+    size_t count;
+    size_t capacity;
+    char **items;
 } Buffer;
 
 typedef enum {
@@ -25,9 +27,10 @@ typedef struct {
 } Diff_Element;
 
 typedef struct {
-    Diff_Element elements[MAX_LINE_SIZE * 2];
-    int size;
-} Diff;
+    size_t count;
+    size_t capacity;
+    Diff_Element *items;
+} Diff_Array;
 
 size_t readline(FILE *fp, char *s, int max) {
     if (fgets(s, max, fp) != NULL) {
@@ -37,25 +40,22 @@ size_t readline(FILE *fp, char *s, int max) {
     return 0;
 }
 
-int readlines(FILE *fp, char **lines) {
+void readlines(FILE *fp, Buffer *buffer) {
     char *p, s[1024];
     size_t size;
-    int lines_count = 0;
 
     while ((size = readline(fp, s, MAX_LINE_SIZE)) > 0) {
         p = malloc(size);
 
-        if (p == NULL || lines_count >= MAX_LINES) {
+        if (p == NULL || buffer->count >= MAX_LINES) {
             printf("Most likely lines count exceeds limit");
             break;
         } else {
             s[size - 1] = '\0';
             strcpy(p, s);
-            lines[lines_count++] = p;
+            da_append(buffer, p);
         }
     }
-
-    return lines_count;
 }
 
 void print_matrix(int **matrix, int rows, int columns) {
@@ -69,17 +69,18 @@ void print_matrix(int **matrix, int rows, int columns) {
 }
 
 void print_buffer(Buffer *buffer) {
-    for (int i = 0; i < buffer->size; ++i) {
-        printf("%3d: %s\n", i + 1, buffer->lines[i]);
+    for (size_t i = 0; i < buffer->count; ++i) {
+        printf("Count: %zu, Capacity: %zu\n\n", buffer->count, buffer->capacity);
+        printf("%3zu: %s\n", i + 1, buffer->items[i]);
     }
 }
 
 void lcs_matrix(int **matrix, Buffer *buffer1, Buffer *buffer2) {
-    for (int i = 0; i < buffer1->size + 1; ++i) {
-        for (int j = 0; j < buffer2->size + 1; ++j) {
+    for (size_t i = 0; i < buffer1->count + 1; ++i) {
+        for (size_t j = 0; j < buffer2->count + 1; ++j) {
             if (i == 0 || j == 0) {
                 matrix[i][j] = 0;
-            } else if (!strcmp(buffer1->lines[i - 1], buffer2->lines[j - 1])) {
+            } else if (!strcmp(buffer1->items[i - 1], buffer2->items[j - 1])) {
                 matrix[i][j] = 1 + matrix[i - 1][j - 1];
             } else {
                 matrix[i][j] = MAX(matrix[i - 1][j], matrix[i][j - 1]);
@@ -89,16 +90,12 @@ void lcs_matrix(int **matrix, Buffer *buffer1, Buffer *buffer2) {
 }
 
 Buffer lcs(int **matrix, Buffer *buffer1, Buffer *buffer2) {
-    Buffer result;
-    int i = buffer1->size, j = buffer2->size;
-    char *p;
+    Buffer result = {0};
+    size_t i = buffer1->count, j = buffer2->count;
 
-    int size = 0;
     while (i != 0 && j != 0) {
-        if (!strcmp(buffer1->lines[i - 1], buffer2->lines[j - 1])) {
-            p = malloc(strlen(buffer1->lines[i - 1]));
-            strcpy(p, buffer1->lines[i - 1]);
-            result.lines[size++] = p;
+        if (!strcmp(buffer1->items[i - 1], buffer2->items[j - 1])) {
+            da_append(&result, buffer1->items[i - 1]);
 
             i -= 1;
             j -= 1;
@@ -109,52 +106,57 @@ Buffer lcs(int **matrix, Buffer *buffer1, Buffer *buffer2) {
         }
     }
 
-    result.size = size;
 
     char *temp;
-    for (int i = 0, k = size - 1; i < k; i++, k--) {
-        temp = result.lines[i];
-        result.lines[i] = result.lines[k];
-        result.lines[k] = temp;
+    for (size_t i = 0, k = result.count - 1; i < k; i++, k--) {
+        temp = result.items[i];
+        result.items[i] = result.items[k];
+        result.items[k] = temp;
     }
 
     return result;
 }
 
-Diff get_diff(int **matrix, Buffer *buffer1, Buffer *buffer2) {
-    /* TODO: dynamic array */
-    Diff diff;
+Diff_Array get_diff(int **matrix, Buffer *buffer1, Buffer *buffer2) {
+    Diff_Array diff = {0};
 
-    int i = buffer1->size, j = buffer2->size;
-    int size = 0;
+    size_t i = buffer1->count, j = buffer2->count;
     while (i != 0 || j != 0) {
+        Diff_Element element;
+
         if (i == 0) {
-            diff.elements[size++] = (Diff_Element) {.type = DIFF_ADDITION, .line = buffer2->lines[j - 1]};
+            element = (Diff_Element) {.type = DIFF_ADDITION, .line = buffer2->items[j - 1]};
+
             j -= 1;
         } else if (j == 0) {
-            diff.elements[size++] = (Diff_Element) {.type = DIFF_REMOVAL, .line = buffer1->lines[i - 1]};
+            element = (Diff_Element) {.type = DIFF_REMOVAL, .line = buffer1->items[i - 1]};
+
             i -= 1;
-        } else if (!strcmp(buffer1->lines[i - 1], buffer2->lines[j - 1])) {
-            diff.elements[size++] = (Diff_Element) {.type = DIFF_UNCHANGED, .line = buffer1->lines[i - 1]};
+        } else if (!strcmp(buffer1->items[i - 1], buffer2->items[j - 1])) {
+            element = (Diff_Element) {.type = DIFF_UNCHANGED, .line = buffer1->items[i - 1]};
+
             i -= 1;
             j -= 1;
         } else if (matrix[i - 1][j] <= matrix[i][j - 1]) {
-            diff.elements[size++] = (Diff_Element) {.type = DIFF_ADDITION, .line = buffer2->lines[j - 1]};
+            element = (Diff_Element) {.type = DIFF_ADDITION, .line = buffer2->items[j - 1]};
+
             j -= 1;
         } else {
-            diff.elements[size++] = (Diff_Element) {.type = DIFF_REMOVAL, .line = buffer1->lines[i - 1]};
+            element = (Diff_Element) {.type = DIFF_REMOVAL, .line = buffer1->items[i - 1]};
+
             i -= 1;
         }
+
+        da_append(&diff, element);
     }
 
     Diff_Element temp;
-    for (int i = 0, k = size - 1; i < k; i++, k--) {
-        temp = diff.elements[i];
-        diff.elements[i] = diff.elements[k];
-        diff.elements[k] = temp;
-    }
 
-    diff.size = size;
+    for (int i = 0, k = diff.count - 1; i < k; i++, k--) {
+        temp = diff.items[i];
+        diff.items[i] = diff.items[k];
+        diff.items[k] = temp;
+    }
 
     return diff;
 }
@@ -167,8 +169,8 @@ Buffer read_file(char *name) {
         exit(1);
     }
 
-    Buffer buffer;
-    buffer.size = readlines(fp, buffer.lines);
+    Buffer buffer = {0};
+    readlines(fp, &buffer);
 
     fclose(fp);
 
@@ -176,8 +178,8 @@ Buffer read_file(char *name) {
 }
 
 void free_buffer(Buffer *buffer) {
-    for (int i = 0; i < buffer->size; ++i) {
-        free(buffer->lines[i]);
+    for (size_t i = 0; i < buffer->count; ++i) {
+        free(buffer->items[i]);
     }
 }
 
@@ -190,14 +192,14 @@ int main(int argc, char *argv[]) {
     Buffer buffer1 = read_file(argv[1]);
     Buffer buffer2 = read_file(argv[2]);
 
-    Matrix matrix = allocate_matrix(buffer1.size + 1, buffer2.size + 1);
+    Matrix matrix = allocate_matrix(buffer1.count + 1, buffer2.count + 1);
     lcs_matrix(matrix.m, &buffer1, &buffer2);
 
-    Diff diff = get_diff(matrix.m, &buffer1, &buffer2);
+    Diff_Array diff = get_diff(matrix.m, &buffer1, &buffer2);
     free_matrix(&matrix);
 
-    for (int i = 0; i < diff.size; i++) {
-        Diff_Element diff_element = diff.elements[i];
+    for (size_t i = 0; i < diff.count; i++) {
+        Diff_Element diff_element = diff.items[i];
 
         switch (diff_element.type) {
         case DIFF_ADDITION:
@@ -220,4 +222,3 @@ int main(int argc, char *argv[]) {
 
     return 0;
 }
-
