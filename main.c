@@ -5,8 +5,6 @@
 #include "matrix.h"
 #include "da.h"
 
-#define MAX_LINES 1024
-#define MAX_LINE_SIZE 1024
 #define MAX(x, y) x > y ? x : y
 
 typedef struct {
@@ -32,29 +30,62 @@ typedef struct {
     Diff_Element *items;
 } Diff_Array;
 
-size_t readline(FILE *fp, char *s, int max) {
-    if (fgets(s, max, fp) != NULL) {
-        return strlen(s);
+void readlines(FILE *fp, Buffer *buffer) {
+    char chunk[128];
+
+    size_t len = sizeof(chunk);
+    char *p = malloc(len);
+    p[0] = '\0';
+
+    while (fgets(chunk, sizeof(chunk), fp) != NULL) {
+        size_t used_len = strlen(p);
+        size_t chunk_size = strlen(chunk);
+
+        if (chunk_size > len - used_len) {
+            len = len + chunk_size;
+            p = realloc(p, len);
+
+            if (p == NULL) {
+                printf("Could not realloc");
+                exit(1);
+            }
+        }
+
+        strncpy(p + used_len, chunk, len - used_len);
+        used_len += chunk_size;
+
+        if (p[used_len - 1] == '\n') {
+            p[used_len - 1] = '\0';
+
+            char *line = malloc(strlen(p) + 1);
+            strcpy(line, p);
+            da_append(buffer, line);
+            p[0] = '\0';
+        }
     }
 
-    return 0;
+    free(p);
 }
 
-void readlines(FILE *fp, Buffer *buffer) {
-    char *p, s[1024];
-    size_t size;
+Buffer read_file(char *name) {
+    FILE *fp = fopen(name, "r");
 
-    while ((size = readline(fp, s, MAX_LINE_SIZE)) > 0) {
-        p = malloc(size);
+    if (fp == NULL) {
+        printf("Could not open file: %s\n", name);
+        exit(1);
+    }
 
-        if (p == NULL || buffer->count >= MAX_LINES) {
-            printf("Most likely lines count exceeds limit");
-            break;
-        } else {
-            s[size - 1] = '\0';
-            strcpy(p, s);
-            da_append(buffer, p);
-        }
+    Buffer buffer = {0};
+    readlines(fp, &buffer);
+
+    fclose(fp);
+
+    return buffer;
+}
+
+void free_buffer(Buffer *buffer) {
+    for (size_t i = 0; i < buffer->count; ++i) {
+        free(buffer->items[i]);
     }
 }
 
@@ -105,7 +136,6 @@ Buffer lcs(int **matrix, Buffer *buffer1, Buffer *buffer2) {
             i -= 1;
         }
     }
-
 
     char *temp;
     for (size_t i = 0, k = result.count - 1; i < k; i++, k--) {
@@ -161,27 +191,6 @@ Diff_Array get_diff(int **matrix, Buffer *buffer1, Buffer *buffer2) {
     return diff;
 }
 
-Buffer read_file(char *name) {
-    FILE *fp = fopen(name, "r");
-
-    if (fp == NULL) {
-        printf("Could not open file: %s\n", name);
-        exit(1);
-    }
-
-    Buffer buffer = {0};
-    readlines(fp, &buffer);
-
-    fclose(fp);
-
-    return buffer;
-}
-
-void free_buffer(Buffer *buffer) {
-    for (size_t i = 0; i < buffer->count; ++i) {
-        free(buffer->items[i]);
-    }
-}
 
 int main(int argc, char *argv[]) {
     if (argc < 3) {
