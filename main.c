@@ -5,6 +5,7 @@
 #include "matrix.h"
 #include "da.h"
 
+#define MAX_LINE_SIZE 1024 * 1024
 #define MAX(x, y) x > y ? x : y
 
 typedef struct {
@@ -21,6 +22,7 @@ typedef enum {
 
 typedef struct {
     Diff_Type type;
+    int ln;
     char *line;
 } Diff_Element;
 
@@ -34,19 +36,26 @@ void readlines(FILE *fp, Buffer *buffer) {
     char chunk[128];
 
     size_t len = sizeof(chunk);
+    size_t used_len = 0;
+
     char *p = malloc(len);
     p[0] = '\0';
 
     while (fgets(chunk, sizeof(chunk), fp) != NULL) {
-        size_t used_len = strlen(p);
         size_t chunk_size = strlen(chunk);
 
         if (chunk_size > len - used_len) {
             len = len + chunk_size;
+
+            if (len > MAX_LINE_SIZE) {
+                printf("Line is too big\n");
+                exit(1);
+            }
+
             p = realloc(p, len);
 
             if (p == NULL) {
-                printf("Could not realloc");
+                printf("Could not realloc\n");
                 exit(1);
             }
         }
@@ -56,6 +65,7 @@ void readlines(FILE *fp, Buffer *buffer) {
 
         if (p[used_len - 1] == '\n') {
             p[used_len - 1] = '\0';
+            used_len = 0;
 
             char *line = malloc(strlen(p) + 1);
             strcpy(line, p);
@@ -137,12 +147,7 @@ Buffer lcs(int **matrix, Buffer *buffer1, Buffer *buffer2) {
         }
     }
 
-    char *temp;
-    for (size_t i = 0, k = result.count - 1; i < k; i++, k--) {
-        temp = result.items[i];
-        result.items[i] = result.items[k];
-        result.items[k] = temp;
-    }
+    da_reverse(char *, result);
 
     return result;
 }
@@ -155,24 +160,44 @@ Diff_Array get_diff(int **matrix, Buffer *buffer1, Buffer *buffer2) {
         Diff_Element element;
 
         if (i == 0) {
-            element = (Diff_Element) {.type = DIFF_ADDITION, .line = buffer2->items[j - 1]};
+            element = (Diff_Element) {
+                .type = DIFF_ADDITION,
+                .line = buffer2->items[j - 1],
+                .ln = j
+            };
 
             j -= 1;
         } else if (j == 0) {
-            element = (Diff_Element) {.type = DIFF_REMOVAL, .line = buffer1->items[i - 1]};
+            element = (Diff_Element) {
+                .type = DIFF_REMOVAL,
+                .line = buffer1->items[i - 1],
+                .ln = i
+            };
 
             i -= 1;
         } else if (!strcmp(buffer1->items[i - 1], buffer2->items[j - 1])) {
-            element = (Diff_Element) {.type = DIFF_UNCHANGED, .line = buffer1->items[i - 1]};
+            element = (Diff_Element) {
+                .type = DIFF_UNCHANGED,
+                .line = buffer1->items[i - 1],
+                .ln = i
+            };
 
             i -= 1;
             j -= 1;
         } else if (matrix[i - 1][j] <= matrix[i][j - 1]) {
-            element = (Diff_Element) {.type = DIFF_ADDITION, .line = buffer2->items[j - 1]};
+            element = (Diff_Element) {
+                .type = DIFF_ADDITION,
+                .line = buffer2->items[j - 1],
+                .ln = j
+            };
 
             j -= 1;
         } else {
-            element = (Diff_Element) {.type = DIFF_REMOVAL, .line = buffer1->items[i - 1]};
+            element = (Diff_Element) {
+                .type = DIFF_REMOVAL,
+                .line = buffer1->items[i - 1],
+                .ln = i
+            };
 
             i -= 1;
         }
@@ -180,13 +205,7 @@ Diff_Array get_diff(int **matrix, Buffer *buffer1, Buffer *buffer2) {
         da_append(&diff, element);
     }
 
-    Diff_Element temp;
-
-    for (int i = 0, k = diff.count - 1; i < k; i++, k--) {
-        temp = diff.items[i];
-        diff.items[i] = diff.items[k];
-        diff.items[k] = temp;
-    }
+    da_reverse(Diff_Element, diff);
 
     return diff;
 }
@@ -208,17 +227,17 @@ int main(int argc, char *argv[]) {
     free_matrix(&matrix);
 
     for (size_t i = 0; i < diff.count; i++) {
-        Diff_Element diff_element = diff.items[i];
+        Diff_Element de = diff.items[i];
 
-        switch (diff_element.type) {
+        switch (de.type) {
         case DIFF_ADDITION:
             printf("\033[0;32m");
-            printf("+%s\n", diff_element.line);
+            printf("%d+%s\n", de.ln, de.line);
             printf("\033[0m");
             break;
         case DIFF_REMOVAL:
             printf("\033[0;31m");
-            printf("-%s\n", diff_element.line);
+            printf("%d-%s\n", de.ln, de.line);
             printf("\033[0m");
             break;
         default:

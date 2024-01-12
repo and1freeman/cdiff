@@ -23,4 +23,13 @@
         free(a->items); \
     } while (0)
 
+#define da_reverse(type, da)                                \
+    type temp;                                              \
+                                                            \
+    for (int i = 0, k = da.count - 1; i < k; i++, k--) {    \
+        temp = da.items[i];                                 \
+        da.items[i] = da.items[k];                          \
+        da.items[k] = temp;                                 \
+    }
+
 #endif
