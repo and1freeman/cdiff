@@ -93,12 +93,6 @@ Buffer read_file(char *name) {
     return buffer;
 }
 
-void free_buffer(Buffer *buffer) {
-    for (size_t i = 0; i < buffer->count; ++i) {
-        free(buffer->items[i]);
-    }
-}
-
 void print_matrix(int **matrix, int rows, int columns) {
     for (int i = 0; i < rows; ++i) {
         for (int j = 0; j < columns; ++j) {
@@ -147,7 +141,7 @@ Buffer lcs(int **matrix, Buffer *buffer1, Buffer *buffer2) {
         }
     }
 
-    da_reverse(char *, result);
+    da_reverse(char *, &result);
 
     return result;
 }
@@ -205,7 +199,7 @@ Diff_Array get_diff(int **matrix, Buffer *buffer1, Buffer *buffer2) {
         da_append(&diff, element);
     }
 
-    da_reverse(Diff_Element, diff);
+    da_reverse(Diff_Element, &diff);
 
     return diff;
 }
@@ -244,9 +238,6 @@ int main(int argc, char *argv[]) {
             break;
         }
     }
-
-    free_buffer(&buffer1);
-    free_buffer(&buffer2);
 
     return 0;
 }
