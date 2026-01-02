@@ -1,3 +1,5 @@
+/* https://florian.github.io/diffing/ */
+
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -6,7 +8,7 @@
 #include "da.h"
 
 #define MAX_LINE_SIZE 1024 * 1024
-#define MAX(x, y) x > y ? x : y
+#define MAX(x, y) (x) > (y) ? (x) : (y)
 
 typedef struct {
     size_t count;
@@ -15,6 +17,7 @@ typedef struct {
 } Buffer;
 
 typedef enum {
+    DIFF_NONE,
     DIFF_ADDITION,
     DIFF_REMOVAL,
     DIFF_UNCHANGED,
@@ -93,16 +96,6 @@ Buffer read_file(char *name) {
     return buffer;
 }
 
-void print_matrix(int **matrix, int rows, int columns) {
-    for (int i = 0; i < rows; ++i) {
-        for (int j = 0; j < columns; ++j) {
-            printf("%d ", matrix[i][j]);
-        }
-
-        printf("\n");
-    }
-}
-
 void print_buffer(Buffer *buffer) {
     for (size_t i = 0; i < buffer->count; ++i) {
         printf("Count: %zu, Capacity: %zu\n\n", buffer->count, buffer->capacity);
@@ -110,43 +103,21 @@ void print_buffer(Buffer *buffer) {
     }
 }
 
-void lcs_matrix(int **matrix, Buffer *buffer1, Buffer *buffer2) {
+void lcs_matrix(Matrix *matrix, Buffer *buffer1, Buffer *buffer2) {
     for (size_t i = 0; i < buffer1->count + 1; ++i) {
         for (size_t j = 0; j < buffer2->count + 1; ++j) {
             if (i == 0 || j == 0) {
-                matrix[i][j] = 0;
+                m_set(matrix, i, j, 0);
             } else if (!strcmp(buffer1->items[i - 1], buffer2->items[j - 1])) {
-                matrix[i][j] = 1 + matrix[i - 1][j - 1];
+                m_set(matrix, i, j, 1 + m_get(matrix, i - 1, j - 1));
             } else {
-                matrix[i][j] = MAX(matrix[i - 1][j], matrix[i][j - 1]);
-            }
+                m_set(matrix, i, j, MAX(m_get(matrix, i - 1, j), m_get(matrix, i, j - 1)));
+           }
         }
     }
 }
 
-Buffer lcs(int **matrix, Buffer *buffer1, Buffer *buffer2) {
-    Buffer result = {0};
-    size_t i = buffer1->count, j = buffer2->count;
-
-    while (i != 0 && j != 0) {
-        if (!strcmp(buffer1->items[i - 1], buffer2->items[j - 1])) {
-            da_append(&result, buffer1->items[i - 1]);
-
-            i -= 1;
-            j -= 1;
-        } else if (matrix[i - 1][j] <= matrix[i][j - 1]) {
-            j -= 1;
-        } else {
-            i -= 1;
-        }
-    }
-
-    da_reverse(char *, &result);
-
-    return result;
-}
-
-Diff_Array get_diff(int **matrix, Buffer *buffer1, Buffer *buffer2) {
+Diff_Array get_diff(Matrix *matrix, Buffer *buffer1, Buffer *buffer2) {
     Diff_Array diff = {0};
 
     size_t i = buffer1->count, j = buffer2->count;
@@ -178,7 +149,7 @@ Diff_Array get_diff(int **matrix, Buffer *buffer1, Buffer *buffer2) {
 
             i -= 1;
             j -= 1;
-        } else if (matrix[i - 1][j] <= matrix[i][j - 1]) {
+        } else if (m_comp(matrix, i - 1, j, i, j - 1) <= 0) {
             element = (Diff_Element) {
                 .type = DIFF_ADDITION,
                 .line = buffer2->items[j - 1],
@@ -214,11 +185,11 @@ int main(int argc, char *argv[]) {
     Buffer buffer1 = read_file(argv[1]);
     Buffer buffer2 = read_file(argv[2]);
 
-    Matrix matrix = allocate_matrix(buffer1.count + 1, buffer2.count + 1);
-    lcs_matrix(matrix.m, &buffer1, &buffer2);
+    Matrix *matrix = m_alloc(buffer1.count + 1, buffer2.count + 1);
+    lcs_matrix(matrix, &buffer1, &buffer2);
 
-    Diff_Array diff = get_diff(matrix.m, &buffer1, &buffer2);
-    free_matrix(&matrix);
+    Diff_Array diff = get_diff(matrix, &buffer1, &buffer2);
+    m_free(matrix);
 
     for (size_t i = 0; i < diff.count; i++) {
         Diff_Element de = diff.items[i];
@@ -228,11 +199,13 @@ int main(int argc, char *argv[]) {
             printf("\033[0;32m");
             printf("%d+%s\n", de.ln, de.line);
             printf("\033[0m");
+
             break;
         case DIFF_REMOVAL:
             printf("\033[0;31m");
             printf("%d-%s\n", de.ln, de.line);
             printf("\033[0m");
+
             break;
         default:
             break;
