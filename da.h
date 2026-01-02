@@ -1,7 +1,6 @@
 #ifndef cdiff_da_h
 #define cdiff_da_h
 
-#include <stdio.h>
 #include <stdlib.h>
 
 #define DA_INITIAL_CAPACITY 8
